@@ -1,0 +1,25 @@
+{
+  "name": "lazycoder.unity.audio",
+  "displayName": "LazyCoder Audios",
+  "version": "1.0.0",
+  "unity": "6000.1",
+  "description": "Audio solution for Unity.",
+  "keywords": [
+    "data",
+    "unity"
+  ],
+  "bugs": {
+    "url": "https://github.com/lazycoder71/LazyCoder.Audio/issues",
+    "email": "lamnd.bounce@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lazycoder71/LazyCoder.Audio.git"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Lam Nguyen",
+    "email": "lamnd.bounce@gmail.com",
+    "url": "https://www.facebook.com/theycallmelam"
+  }
+}
