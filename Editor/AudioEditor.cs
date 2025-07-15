@@ -7,7 +7,7 @@ namespace LazyCoder.Audio.Editor
 {
     public static class AudioEditor 
     {
-        [MenuItem("LFramework/Audio/Create config from audio file")]
+        [MenuItem("LazyCoder/Audio/Create config from audio file")]
         private static void CreateConfig()
         {
             foreach (var s in Selection.objects)
