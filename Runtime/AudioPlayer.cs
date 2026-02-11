@@ -21,11 +21,14 @@ namespace LazyCoder.Audio
 
         private float _playTime;
 
-        public AudioConfig Config { get { return _config; } }
+        public AudioConfig Config => _config;
 
-        public AudioSource AudioSource { get { return _audioSource; } }
+        public AudioSource AudioSource => _audioSource;
 
-        public float PlayTime { get { return _playTime; } }
+        /// <summary>
+        /// Get the play time (in seconds) since this audio started playing
+        /// </summary>
+        public float PlayTime => _playTime;
 
         #region MonoBehaviour
 
@@ -49,7 +52,7 @@ namespace LazyCoder.Audio
             if (!_bind)
                 return;
 
-            if (_bindTarget != null)
+            if (_bindTarget)
                 TransformCached.position = _bindTarget.position;
             else
                 Stop();
@@ -128,7 +131,7 @@ namespace LazyCoder.Audio
         public void Stop()
         {
             // Prevent calling stop when this audio player already in pool
-            if (_config == null)
+            if (!_config)
                 return;
 
             _tween?.Kill();
