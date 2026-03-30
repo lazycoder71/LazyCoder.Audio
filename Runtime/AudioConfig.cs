@@ -3,12 +3,14 @@ using UnityEngine;
 
 namespace LazyCoder.Audio
 {
-    [System.Serializable]
+    /// <summary>
+    /// ScriptableObject that defines audio playback settings for a single clip.
+    /// </summary>
     public class AudioConfig : ScriptableObject
     {
         [SerializeField] private AudioClip _clip;
 
-        [SerializeField] private AudioType _type;
+        [SerializeField] private AudioCategory _category;
 
         [Range(0f, 1f)]
         [SerializeField] private float _volumeScale = 1f;
@@ -29,18 +31,18 @@ namespace LazyCoder.Audio
 
         public AudioClip Clip => _clip;
 
-        public AudioType Type => _type;
+        public AudioCategory Category => _category;
+
+        public float VolumeScale => _volumeScale;
 
         public bool Is3D => _is3D;
 
         public Vector2 Distance => _distance;
 
-        public float VolumeScale => _volumeScale;
-
         public bool PitchVariation => _pitchVariation;
 
         public Vector2 PitchVariationRange => _pitchVariationRange;
-        
+
         public void SetClip(AudioClip clip)
         {
             _clip = clip;

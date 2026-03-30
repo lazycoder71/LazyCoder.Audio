@@ -1,9 +1,9 @@
 namespace LazyCoder.Audio
 {
-    [System.Serializable]
-    public enum AudioType
+    public enum AudioCategory
     {
         Sound,
         Music,
     }
 }
+
