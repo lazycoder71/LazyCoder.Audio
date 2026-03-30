@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace LazyCoder.Audio.Editor
 {
-    public static class AudioEditor 
+    public static class AudioEditor
     {
         [MenuItem("LazyCoder/Audio/Create config from audio file")]
         private static void CreateConfig()
@@ -19,12 +19,14 @@ namespace LazyCoder.Audio.Editor
 
                 AudioClip clip = (AudioClip)s;
 
-                AudioConfig config = ScriptableObjectHelper.LoadOrCreateNewAsset<AudioConfig>(Path.GetDirectoryName(assetPath), clip.name);
+                AudioConfig config =
+                    ScriptableObjectHelper.LoadOrCreateNewAsset<AudioConfig>(Path.GetDirectoryName(assetPath),
+                        clip.name);
 
                 if (config == null)
                     continue;
 
-                config.Clip = clip;
+                config.SetClip(clip);
 
                 ScriptableObjectHelper.SaveAsset(config);
             }

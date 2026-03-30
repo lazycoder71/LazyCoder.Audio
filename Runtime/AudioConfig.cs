@@ -7,29 +7,27 @@ namespace LazyCoder.Audio
     public class AudioConfig : ScriptableObject
     {
         [SerializeField] private AudioClip _clip;
+
         [SerializeField] private AudioType _type;
 
         [Range(0f, 1f)]
         [SerializeField] private float _volumeScale = 1f;
 
+        [Title("3D Settings")]
         [SerializeField] private bool _is3D;
 
         [ShowIf("@_is3D")]
         [MinMaxSlider(0f, 500f, ShowFields = true)]
         [SerializeField] private Vector2 _distance = new Vector2(1f, 10f);
 
-        [Space]
+        [Title("Pitch Settings")]
         [SerializeField] private bool _pitchVariation;
 
         [ShowIf("@_pitchVariation")]
         [MinMaxSlider(-3f, 3f, ShowFields = true)]
         [SerializeField] private Vector2 _pitchVariationRange = new Vector2(1.0f, 1.0f);
 
-        public AudioClip Clip
-        {
-            get => _clip;
-            set => _clip = value;
-        }
+        public AudioClip Clip => _clip;
 
         public AudioType Type => _type;
 
@@ -42,5 +40,10 @@ namespace LazyCoder.Audio
         public bool PitchVariation => _pitchVariation;
 
         public Vector2 PitchVariationRange => _pitchVariationRange;
+        
+        public void SetClip(AudioClip clip)
+        {
+            _clip = clip;
+        }
     }
 }
