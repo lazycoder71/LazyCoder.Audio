@@ -7,9 +7,9 @@ namespace LazyCoder.Audio
 {
     public static class AudioManager
     {
-        public static LValue<float> VolumeMaster = new LValue<float>(1.0f);
-        public static LValue<float> VolumeMusic = new LValue<float>(1.0f);
-        public static LValue<float> VolumeSound = new LValue<float>(1.0f);
+        public static LzValue<float> VolumeMaster = new(1.0f);
+        public static LzValue<float> VolumeMusic = new(1.0f);
+        public static LzValue<float> VolumeSound = new(1.0f);
 
         private static List<AudioPlayer> s_players = new List<AudioPlayer>();
 
@@ -23,7 +23,7 @@ namespace LazyCoder.Audio
 
         #region Function -> Private
 
-        private static void Volume_EventValueChanged(float volume)
+        private static void Volume_EventValueChanged(float oldValue, float newValue)
         {
             for (int i = 0; i < s_players.Count; i++)
             {
