@@ -13,11 +13,7 @@ namespace LazyCoder.Audio
     /// </summary>
     public class AudioPlayer : IDisposable
     {
-        private AudioSource _source;
-        private readonly AudioConfig _config;
-
         private bool _isDisposed;
-        private bool _isPaused;
 
         // Bind target tracking
         private bool _isBinding;
@@ -27,43 +23,45 @@ namespace LazyCoder.Audio
         private float _volume = 1.0f;
 
         private Tween _fadeTween;
-        private CancelToken _cancelToken = new();
+        private readonly CancelToken _cancelToken = new();
 
-        public AudioConfig Config => _config;
+        public AudioConfig Config { get; private set; }
+
+        public AudioSource Source { get; private set; }
 
         public float PlayTime { get; private set; }
 
-        public bool IsPlaying => !_isDisposed && _source && _source.isPlaying;
-
-        public bool IsIsPaused => _isPaused;
+        public bool IsPaused { get; private set; }
 
         public AudioPlayer(AudioSource source, AudioConfig config, bool isLoop)
         {
-            _source = source;
-            _config = config;
+            Source = source;
+            Config = config;
 
             // Setup AudioSource
-            _source.clip = config.Clip;
-            _source.time = 0f;
-            _source.loop = isLoop;
-            _source.spatialBlend = config.Is3D ? 1.0f : 0f;
-            _source.minDistance = config.Distance.x;
-            _source.maxDistance = config.Distance.y;
-            _source.pitch = config.PitchVariation ? config.PitchVariationRange.RandomWithin() : 1.0f;
+            Source.clip = config.Clip;
+            Source.time = 0f;
+            Source.loop = isLoop;
+            Source.spatialBlend = config.Is3D ? 1.0f : 0f;
+            Source.minDistance = config.Distance.x;
+            Source.maxDistance = config.Distance.y;
+            Source.pitch = config.PitchVariation ? config.PitchVariationRange.RandomWithin() : 1.0f;
 
             PlayTime = Time.time;
 
             UpdateVolume();
-            _source.Play();
+
+            Source.Play();
 
             // Auto-cleanup for non-looping clips
-            AutoCleanupAsync(_cancelToken.Token).Forget();
+            if (!isLoop)
+                AutoCleanupAsync(_cancelToken.Token).Forget();
 
             // Register & subscribe events
             AudioManager.Register(this);
             MonoCallback.SafeInstance.EventLateUpdate += OnLateUpdate;
             AudioManager.VolumeMaster.EventValueChanged += OnVolumeChanged;
-            AudioManager.GetCategoryVolume(_config.Category).EventValueChanged += OnVolumeChanged;
+            AudioManager.GetCategoryVolume(Config.Category).EventValueChanged += OnVolumeChanged;
         }
 
         /// <summary>
@@ -71,8 +69,8 @@ namespace LazyCoder.Audio
         /// </summary>
         public AudioPlayer SetPosition(Vector3 position)
         {
-            if (_source)
-                _source.transform.position = position;
+            if (Source)
+                Source.transform.position = position;
 
             return this;
         }
@@ -94,7 +92,8 @@ namespace LazyCoder.Audio
         /// </summary>
         public AudioPlayer SetVolume(float volume)
         {
-            _volume = volume;
+            _volume = Mathf.Clamp01(volume);
+            
             UpdateVolume();
 
             return this;
@@ -105,8 +104,8 @@ namespace LazyCoder.Audio
         /// </summary>
         public AudioPlayer SetPitch(float pitch)
         {
-            if (_source)
-                _source.pitch = pitch;
+            if (Source)
+                Source.pitch = pitch;
 
             return this;
         }
@@ -116,11 +115,11 @@ namespace LazyCoder.Audio
         /// </summary>
         public AudioPlayer Pause()
         {
-            if (_isDisposed || !_source || _isPaused)
+            if (_isDisposed || !Source || IsPaused)
                 return this;
 
-            _isPaused = true;
-            _source.Pause();
+            IsPaused = true;
+            Source.Pause();
 
             return this;
         }
@@ -130,11 +129,11 @@ namespace LazyCoder.Audio
         /// </summary>
         public AudioPlayer Resume()
         {
-            if (_isDisposed || !_source || !_isPaused)
+            if (_isDisposed || !Source || !IsPaused)
                 return this;
 
-            _isPaused = false;
-            _source.UnPause();
+            IsPaused = false;
+            Source.UnPause();
 
             return this;
         }
@@ -144,7 +143,7 @@ namespace LazyCoder.Audio
         /// </summary>
         public AudioPlayer FadeIn(float duration, float targetVolume = 1.0f)
         {
-            if (_isDisposed || !_source)
+            if (_isDisposed || !Source)
                 return this;
 
             _volume = 0f;
@@ -160,7 +159,7 @@ namespace LazyCoder.Audio
         /// </summary>
         public AudioPlayer FadeOut(float duration, bool stopOnComplete = true)
         {
-            if (_isDisposed || !_source)
+            if (_isDisposed || !Source)
                 return this;
 
             AnimateVolume(0f, duration, stopOnComplete ? Stop : null);
@@ -176,10 +175,10 @@ namespace LazyCoder.Audio
             if (_isDisposed)
                 return;
 
-            if (_source)
+            if (Source)
             {
-                _source.Stop();
-                AudioManager.Pool.Release(_source);
+                Source.Stop();
+                AudioManager.Pool.Release(Source);
             }
 
             Dispose();
@@ -200,9 +199,9 @@ namespace LazyCoder.Audio
 
             MonoCallback.SafeInstance.EventLateUpdate -= OnLateUpdate;
             AudioManager.VolumeMaster.EventValueChanged -= OnVolumeChanged;
-            AudioManager.GetCategoryVolume(_config.Category).EventValueChanged -= OnVolumeChanged;
+            AudioManager.GetCategoryVolume(Config.Category).EventValueChanged -= OnVolumeChanged;
 
-            _source = null;
+            Source = null;
 
             GC.SuppressFinalize(this);
         }
@@ -213,11 +212,11 @@ namespace LazyCoder.Audio
 
         private void UpdateVolume()
         {
-            if (!_source)
+            if (!Source)
                 return;
 
-            float categoryVolume = AudioManager.GetCategoryVolume(_config.Category).Value;
-            _source.volume = _volume * _config.VolumeScale * categoryVolume * AudioManager.VolumeMaster.Value;
+            float categoryVolume = AudioManager.GetCategoryVolume(Config.Category).Value;
+            Source.volume = _volume * Config.VolumeScale * categoryVolume * AudioManager.VolumeMaster.Value;
         }
 
         private void FollowBindTarget()
@@ -225,8 +224,8 @@ namespace LazyCoder.Audio
             if (!_isBinding)
                 return;
 
-            if (_bindTarget && _source)
-                _source.transform.position = _bindTarget.position;
+            if (_bindTarget && Source)
+                Source.transform.position = _bindTarget.position;
             else
                 Stop();
         }
@@ -235,13 +234,15 @@ namespace LazyCoder.Audio
         {
             KillFadeTween();
 
+            targetVolume = Mathf.Clamp01(targetVolume);
+
             _fadeTween = DOTween.To(() => _volume, x =>
                 {
                     _volume = x;
                     UpdateVolume();
                 }, targetVolume, duration)
-                .SetTarget(_source)
-                .SetLink(_source.gameObject);
+                .SetTarget(Source)
+                .SetLink(Source.gameObject);
 
             if (onComplete != null)
                 _fadeTween.OnComplete(() => onComplete());
@@ -261,7 +262,7 @@ namespace LazyCoder.Audio
             {
                 await UniTask.Yield(cancellationToken);
 
-                if (_source && !_source.isPlaying && !_source.loop && !_isPaused)
+                if (Source && !Source.isPlaying && !Source.loop && !IsPaused)
                 {
                     Stop();
                     return;

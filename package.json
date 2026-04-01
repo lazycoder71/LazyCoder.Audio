@@ -1,7 +1,7 @@
 {
   "name": "lazycoder.unity.audio",
   "displayName": "LazyCoder Audios",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "unity": "6000.3",
   "description": "Audio solution for Unity.",
   "keywords": [
