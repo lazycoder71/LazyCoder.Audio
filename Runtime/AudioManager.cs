@@ -1,100 +1,69 @@
 ﻿using System;
 using System.Collections.Generic;
-using UnityEngine;
 using LazyCoder.Core;
 
 namespace LazyCoder.Audio
 {
+    /// <summary>
+    /// Central static manager for audio playback, volume control, and active player tracking.
+    /// </summary>
     public static class AudioManager
     {
-        public static LzValue<float> VolumeMaster = new(1.0f);
-        public static LzValue<float> VolumeMusic = new(1.0f);
-        public static LzValue<float> VolumeSound = new(1.0f);
+        public static readonly LzValue<float> VolumeMaster = new(1.0f);
+        public static readonly LzValue<float> VolumeMusic = new(1.0f);
+        public static readonly LzValue<float> VolumeSound = new(1.0f);
 
-        private static List<AudioPlayer> s_players = new List<AudioPlayer>();
+        public static readonly AudioPool Pool = new();
 
-        [RuntimeInitializeOnLoadMethod]
-        private static void InitOnStartup()
-        {
-            VolumeMaster.EventValueChanged += Volume_EventValueChanged;
-            VolumeMusic.EventValueChanged += Volume_EventValueChanged;
-            VolumeSound.EventValueChanged += Volume_EventValueChanged;
-        }
+        private static readonly List<AudioPlayer> _activePlayers = new();
 
-        #region Function -> Private
-
-        private static void Volume_EventValueChanged(float oldValue, float newValue)
-        {
-            for (int i = 0; i < s_players.Count; i++)
-            {
-                s_players[i].UpdateVolume();
-            }
-        }
-
-        #endregion
-
-        #region Function -> Public
-
-        public static void Register(AudioPlayer entity)
-        {
-            s_players.Add(entity);
-        }
-
-        public static void Unregister(AudioPlayer entity)
-        {
-            s_players.Remove(entity);
-        }
-
+        /// <summary>
+        /// Play an audio config and return the player handle.
+        /// </summary>
         public static AudioPlayer Play(AudioConfig config, bool isLoop = false)
         {
             if (config == null)
                 throw new ArgumentNullException(nameof(config));
 
-            AudioPlayer audioEntity = AudioPlayerPool.Get();
-
-            audioEntity.Play(config, isLoop);
-
-            return audioEntity;
+            return new AudioPlayer(Pool.Get(), config, isLoop);
         }
 
-        public static void Stop(AudioConfig config, bool isAll = false)
+        /// <summary>
+        /// Stop all active players that match the given config.
+        /// </summary>
+        public static void Stop(AudioConfig config)
         {
             if (config == null)
                 throw new ArgumentNullException(nameof(config));
 
-            for (int i = 0; i < s_players.Count; i++)
+            for (int i = _activePlayers.Count - 1; i >= 0; i--)
             {
-                if (s_players[i].Config == config)
-                {
-                    s_players[i].Stop();
-
-                    if (!isAll)
-                        break;
-                }
+                if (_activePlayers[i].Config == config)
+                    _activePlayers[i].Stop();
             }
         }
 
+        /// <summary>
+        /// Stop all currently active audio players.
+        /// </summary>
         public static void StopAll()
         {
-            for (int i = 0; i < s_players.Count; i++)
+            for (int i = _activePlayers.Count - 1; i >= 0; i--)
             {
-                s_players[i].Stop();
+                _activePlayers[i].Stop();
             }
         }
 
-        public static AudioPlayer Find(AudioConfig config)
+        /// <summary>
+        /// Get the volume LzValue for the given audio category.
+        /// </summary>
+        public static LzValue<float> GetCategoryVolume(AudioCategory category)
         {
-            for (int i = 0; i < s_players.Count; i++)
-            {
-                if (s_players[i].Config == config)
-                {
-                    return s_players[i];
-                }
-            }
-
-            return null;
+            return category == AudioCategory.Music ? VolumeMusic : VolumeSound;
         }
 
-        #endregion
+        internal static void Register(AudioPlayer player) => _activePlayers.Add(player);
+
+        internal static void Unregister(AudioPlayer player) => _activePlayers.Remove(player);
     }
 }

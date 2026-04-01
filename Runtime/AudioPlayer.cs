@@ -1,191 +1,272 @@
-﻿using DG.Tweening;
+using System;
+using System.Threading;
+using Cysharp.Threading.Tasks;
+using DG.Tweening;
 using LazyCoder.Core;
 using UnityEngine;
 
 namespace LazyCoder.Audio
 {
-    public class AudioPlayer : MonoBase
+    /// <summary>
+    /// Represents an active audio playback instance with fluent API for control.
+    /// Implements <see cref="IDisposable"/> for safe resource cleanup.
+    /// </summary>
+    public class AudioPlayer : IDisposable
     {
-        private AudioConfig _config;
+        private AudioSource _source;
+        private readonly AudioConfig _config;
 
-        private AudioSource _audioSource;
+        private bool _isDisposed;
+        private bool _isPaused;
 
-        private Tween _tween;
-        private Tween _tweenFade;
-
-        private bool _bind;
+        // Bind target tracking
+        private bool _isBinding;
         private Transform _bindTarget;
 
-        // Internal volume scale, affected by config volume scale and audio settings volume scale
+        // Internal volume (0-1), independent of config/global volume
         private float _volume = 1.0f;
 
-        private float _playTime;
+        private Tween _fadeTween;
+        private CancelToken _cancelToken = new();
 
         public AudioConfig Config => _config;
 
-        public AudioSource AudioSource => _audioSource;
+        public float PlayTime { get; private set; }
+
+        public bool IsPlaying => !_isDisposed && _source && _source.isPlaying;
+
+        public bool IsIsPaused => _isPaused;
+
+        public AudioPlayer(AudioSource source, AudioConfig config, bool isLoop)
+        {
+            _source = source;
+            _config = config;
+
+            // Setup AudioSource
+            _source.clip = config.Clip;
+            _source.time = 0f;
+            _source.loop = isLoop;
+            _source.spatialBlend = config.Is3D ? 1.0f : 0f;
+            _source.minDistance = config.Distance.x;
+            _source.maxDistance = config.Distance.y;
+            _source.pitch = config.PitchVariation ? config.PitchVariationRange.RandomWithin() : 1.0f;
+
+            PlayTime = Time.time;
+
+            UpdateVolume();
+            _source.Play();
+
+            // Auto-cleanup for non-looping clips
+            AutoCleanupAsync(_cancelToken.Token).Forget();
+
+            // Register & subscribe events
+            AudioManager.Register(this);
+            MonoCallback.SafeInstance.EventLateUpdate += OnLateUpdate;
+            AudioManager.VolumeMaster.EventValueChanged += OnVolumeChanged;
+            AudioManager.GetCategoryVolume(_config.Category).EventValueChanged += OnVolumeChanged;
+        }
 
         /// <summary>
-        /// Get the play time (in seconds) since this audio started playing
+        /// Set the world position of the audio source.
         /// </summary>
-        public float PlayTime => _playTime;
-
-        #region MonoBehaviour
-
-        private void Awake()
+        public AudioPlayer SetPosition(Vector3 position)
         {
-            _audioSource = GetComponent<AudioSource>();
+            if (_source)
+                _source.transform.position = position;
 
-            AudioManager.Register(this);
+            return this;
         }
 
-        private void OnDestroy()
+        /// <summary>
+        /// Bind the audio source to follow a transform every frame.
+        /// Automatically stops if the target is destroyed.
+        /// </summary>
+        public AudioPlayer BindTo(Transform target)
         {
-            _tween?.Kill();
-            _tweenFade?.Kill();
+            _isBinding = true;
+            _bindTarget = target;
 
-            AudioManager.Unregister(this);
+            return this;
         }
 
-        protected override void LateTick()
+        /// <summary>
+        /// Set the local volume multiplier (0-1). Does not affect config or global volume.
+        /// </summary>
+        public AudioPlayer SetVolume(float volume)
         {
-            if (!_bind)
+            _volume = volume;
+            UpdateVolume();
+
+            return this;
+        }
+
+        /// <summary>
+        /// Override the pitch of the audio source.
+        /// </summary>
+        public AudioPlayer SetPitch(float pitch)
+        {
+            if (_source)
+                _source.pitch = pitch;
+
+            return this;
+        }
+
+        /// <summary>
+        /// Pause playback. Can be resumed with <see cref="Resume"/>.
+        /// </summary>
+        public AudioPlayer Pause()
+        {
+            if (_isDisposed || !_source || _isPaused)
+                return this;
+
+            _isPaused = true;
+            _source.Pause();
+
+            return this;
+        }
+
+        /// <summary>
+        /// Resume playback after <see cref="Pause"/>.
+        /// </summary>
+        public AudioPlayer Resume()
+        {
+            if (_isDisposed || !_source || !_isPaused)
+                return this;
+
+            _isPaused = false;
+            _source.UnPause();
+
+            return this;
+        }
+
+        /// <summary>
+        /// Fade in from silence to the target volume over the specified duration.
+        /// </summary>
+        public AudioPlayer FadeIn(float duration, float targetVolume = 1.0f)
+        {
+            if (_isDisposed || !_source)
+                return this;
+
+            _volume = 0f;
+            UpdateVolume();
+
+            AnimateVolume(targetVolume, duration);
+
+            return this;
+        }
+
+        /// <summary>
+        /// Fade out to silence over the specified duration. Optionally stops playback on complete.
+        /// </summary>
+        public AudioPlayer FadeOut(float duration, bool stopOnComplete = true)
+        {
+            if (_isDisposed || !_source)
+                return this;
+
+            AnimateVolume(0f, duration, stopOnComplete ? Stop : null);
+
+            return this;
+        }
+
+        /// <summary>
+        /// Stop playback and release the audio source back to the pool.
+        /// </summary>
+        public void Stop()
+        {
+            if (_isDisposed)
                 return;
 
-            if (_bindTarget)
-                TransformCached.position = _bindTarget.position;
+            if (_source)
+            {
+                _source.Stop();
+                AudioManager.Pool.Release(_source);
+            }
+
+            Dispose();
+        }
+
+        public void Dispose()
+        {
+            if (_isDisposed)
+                return;
+
+            _isDisposed = true;
+
+            KillFadeTween();
+
+            _cancelToken.Cancel();
+
+            AudioManager.Unregister(this);
+
+            MonoCallback.SafeInstance.EventLateUpdate -= OnLateUpdate;
+            AudioManager.VolumeMaster.EventValueChanged -= OnVolumeChanged;
+            AudioManager.GetCategoryVolume(_config.Category).EventValueChanged -= OnVolumeChanged;
+
+            _source = null;
+
+            GC.SuppressFinalize(this);
+        }
+
+        private void OnVolumeChanged(float oldValue, float newValue) => UpdateVolume();
+
+        private void OnLateUpdate() => FollowBindTarget();
+
+        private void UpdateVolume()
+        {
+            if (!_source)
+                return;
+
+            float categoryVolume = AudioManager.GetCategoryVolume(_config.Category).Value;
+            _source.volume = _volume * _config.VolumeScale * categoryVolume * AudioManager.VolumeMaster.Value;
+        }
+
+        private void FollowBindTarget()
+        {
+            if (!_isBinding)
+                return;
+
+            if (_bindTarget && _source)
+                _source.transform.position = _bindTarget.position;
             else
                 Stop();
         }
 
-        #endregion
-
-        #region Function -> Public
-
-        public void Play(AudioConfig config, bool isLoop = false)
+        private void AnimateVolume(float targetVolume, float duration, Action onComplete = null)
         {
-            Construct(config, isLoop);
+            KillFadeTween();
 
-            _tween?.Kill();
+            _fadeTween = DOTween.To(() => _volume, x =>
+                {
+                    _volume = x;
+                    UpdateVolume();
+                }, targetVolume, duration)
+                .SetTarget(_source)
+                .SetLink(_source.gameObject);
 
-            if (!isLoop)
-                _tween = DOVirtual.DelayedCall(config.Clip.length, Stop, false);
-
-            _audioSource.Play();
+            if (onComplete != null)
+                _fadeTween.OnComplete(() => onComplete());
         }
 
-        public AudioPlayer BindTo(Transform target)
+        private void KillFadeTween()
         {
-            _bindTarget = target;
-            _bind = true;
+            if (_fadeTween != null && _fadeTween.IsActive())
+                _fadeTween.Kill();
 
-            return this;
+            _fadeTween = null;
         }
 
-        public AudioPlayer SetPosition(Vector3 position)
+        private async UniTaskVoid AutoCleanupAsync(CancellationToken cancellationToken)
         {
-            TransformCached.position = position;
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await UniTask.Yield(cancellationToken);
 
-            return this;
+                if (_source && !_source.isPlaying && !_source.loop && !_isPaused)
+                {
+                    Stop();
+                    return;
+                }
+            }
         }
-
-        public AudioPlayer SetLocalPosition(Vector3 localPosition)
-        {
-            TransformCached.localPosition = localPosition;
-
-            return this;
-        }
-
-        public AudioPlayer SetPitch(float pitch)
-        {
-            _audioSource.pitch = pitch;
-
-            return this;
-        }
-
-        public AudioPlayer FadeIn(float duration, Ease ease = Ease.InSine)
-        {
-            if (!_audioSource.loop)
-                Mathf.Min(duration, _audioSource.clip.length - _audioSource.time);
-
-            _tweenFade?.Kill();
-            _tweenFade = DOVirtual.Float(0f, 1.0f, duration, (x) => { _volume = x; UpdateVolume(); })
-                                  .SetUpdate(false);
-
-            return this;
-        }
-
-        public AudioPlayer FadeOut(float duration, Ease ease = Ease.InSine)
-        {
-            if (!_audioSource.loop)
-                Mathf.Min(duration, _audioSource.clip.length - _audioSource.time);
-
-            _tweenFade?.Kill();
-            _tweenFade = DOVirtual.Float(_volume, 0.0f, duration, (x) => { _volume = x; UpdateVolume(); })
-                                  .SetUpdate(false)
-                                  .OnComplete(Stop);
-
-            return this;
-        }
-
-        public void Stop()
-        {
-            // Prevent calling stop when this audio player already in pool
-            if (!_config)
-                return;
-
-            _tween?.Kill();
-            _tweenFade?.Kill();
-
-            _audioSource.Stop();
-
-            _config = null;
-
-            AudioPlayerPool.Release(this);
-        }
-
-        public void UpdateVolume()
-        {
-            // Can't update volume if there is no config
-            if (_config == null)
-                return;
-
-            // Calculate volume final
-            float volumeFinal = _volume * _config.VolumeScale * (_config.Type == AudioType.Music ? AudioManager.VolumeMusic.Value : AudioManager.VolumeSound.Value) * AudioManager.VolumeMaster.Value;
-
-            _audioSource.mute = volumeFinal <= 0f;
-            _audioSource.volume = volumeFinal;
-        }
-
-        #endregion
-
-        #region Function -> Private
-
-        private void Construct(AudioConfig config, bool loop = false)
-        {
-            // Assign config
-            _config = config;
-
-            // Reset bind
-            _bind = false;
-            _bindTarget = null;
-
-            // Reset volume
-            _volume = 1.0f;
-
-            // Setup Audio Source
-            _audioSource.clip = config.Clip;
-            _audioSource.loop = loop;
-            _audioSource.minDistance = config.Distance.x;
-            _audioSource.maxDistance = config.Distance.y;
-            _audioSource.spatialBlend = config.Is3D ? 1.0f : 0f;
-            _audioSource.pitch = config.PitchVariation ? config.PitchVariationRange.RandomWithin() : 1.0f;
-
-            _playTime = Time.time;
-
-            UpdateVolume();
-        }
-
-        #endregion
     }
 }

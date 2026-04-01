@@ -2,7 +2,9 @@
     "name": "LazyCoder.Audio",
     "rootNamespace": "LazyCoder.Audio",
     "references": [
-        "LazyCoder.Core"
+        "LazyCoder.Core",
+        "UniTask",
+        "DOTween.Modules"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
